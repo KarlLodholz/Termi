@@ -88,5 +88,106 @@ void QConsole::setArg(const std::string &arg) {
 }
 
 void QConsole::Process(const std::string &cmd) {
+    if(cmd.size()) {
+
+        history.push_back(cmd);
+        hist_idx = int(history.size());
+
+        //Variables
+        std::string* token_arr;
+        std::string s = cmd;
+        std::string delimiter = " ";
+        size_t pos = 0;
+        std::string token;
+        std::string temp;
+        int command;
+        int ctr;
+        int parse_ctr;
+
+        //Key
+        const char *keyTable[6] = {"ls", "cd", "rm", "mkdir", "quit", "history"};
+
+        //Variables that need to be reset at the top of the loop
+        command = -1;
+        pos = 0;
+        ctr = 1;
+        parse_ctr = 0;
+
+        temp = s;
+
+        //Loop to find needed length of array 
+        while ((pos = temp.find(delimiter)) != std::string::npos) {
+            //std::cout<<"seggi"<<std::endl;
+            token = temp.substr(0, pos);
+            ctr++;
+            temp.erase(0, pos + delimiter.length());
+        }
+
+        //std::cout<<"so"<<std::endl;
+
+        //Declare array with the length
+        token_arr = new std::string [ctr];
+        pos = 0;
+
+        //Assign each index of the array
+        while ((pos = s.find(delimiter)) != std::string::npos) {
+            token = s.substr(0, pos);
+            token_arr[parse_ctr] = token;
+
+            //Increment actual parse counter and erase the indexed part of the input
+            parse_ctr++;
+            s.erase(0, pos + delimiter.length());
+        }
+        token_arr[parse_ctr] = s;
+
+        //Compare the command to the key table
+        for(int i = 0; i < 6; i++) {
+            if((token_arr[0] == keyTable[i])) {
+                //std::cout << keyTable[i] << std::endl;
+                command = i;
+            }
+        }
+
+        delete [] token_arr;
+
+        //Switch case where execution is done for each command
+        //console->append("\n");
+        switch(command) {
+            case 0: 
+                std::cout << "ls" << std::endl;
+                console->append("ls"); 
+            break;
+
+            case 1:
+                std::cout << "cd" << std::endl;
+                console->append("cd");
+            break;
+
+            case 2:
+                std::cout << "rm" << std::endl;
+                console->append("rm");
+            break;
+
+            case 3:
+                std::cout << "mkdir" << std::endl;
+                console->append("mkdir");
+            break;
+
+            case 4:
+                std::cout << "gtfo" << std::endl;
+                console->append("gtfo");
+                exit(1);
+            break;
+
+            case 5:
+            std::cout << std::endl;
+            for (int i = 0; i < int(history.size()); i++) {
+                std::cout << history[i] << std::endl;
+            }
+            break;
+            default:
+            console->append("Error, No valid command inputted");
+        }
+    }
     return;
 }
