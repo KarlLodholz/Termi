@@ -5,7 +5,27 @@
 #include <bits/stdc++.h> 
 //#include <iostream>
 // #include <unistd.h>
- 
+
+
+// Linux file system headers
+#include <unistd.h>
+#include <dirent.h>	// linux directory structures
+
+// Async headers
+#include <sys/types.h>
+#include <sys/wait.h>
+
+const std::vector<std::string> built_ins = {
+	"ls",
+	"cd",
+	"rm",
+	"mkdir",
+	"rmdir",
+	"touch",
+	"exit"
+};
+
+
 QConsole::QConsole(QWidget *parent) : QWidget(parent)
 {
     resize(650,500);
@@ -14,12 +34,15 @@ QConsole::QConsole(QWidget *parent) : QWidget(parent)
     char temp[32];
     FILE *file;
     file = popen("whoami", "r");
-    fgets(temp, sizeof(temp), file);
+    
+    
+    user = std::string(fgets(temp, sizeof(temp), file));
     pclose(file);
-    std::string name = std::string(temp);
-    name.erase(remove(name.begin(), name.end(), '\n'), name.end());
-    std::strcpy(temp,name.c_str());
-    adrs = std::strcat(temp,":~ $");
+    user.erase(remove(user.begin(), user.end(), '\n'), user.end());
+
+    std::vector<std::string> home{"cd","/home/"+user+"/"};
+
+    launch_built_in(home);
 
     //set console
     console = new QTextEdit();
@@ -27,7 +50,7 @@ QConsole::QConsole(QWidget *parent) : QWidget(parent)
     console->setFontFamily("Courier");
     console->setFontPointSize(13);
     console->setTextColor(QColor(255,255,255));
-    console->setText(adrs);
+    console->setText( getAddress());
     console->moveCursor(QTextCursor::End);
     lineStart = (console->textCursor()).position();
     hist_idx = 0;
@@ -38,8 +61,6 @@ QConsole::QConsole(QWidget *parent) : QWidget(parent)
     mainLayout = new QVBoxLayout;
     mainLayout->addWidget(console);
     setLayout(mainLayout);
-
-    
 }
  
 void QConsole::keyPressEvent(QKeyEvent *e)
@@ -55,7 +76,7 @@ void QConsole::keyPressEvent(QKeyEvent *e)
         case Qt::Key_Enter:
         case Qt::Key_Return:
             Process(getArg());
-            console->append("\n"+adrs);
+            console->append("\n"+getAddress());
             console->moveCursor(QTextCursor::End);
             lineStart = (console->textCursor()).position();
             break;
@@ -100,27 +121,36 @@ void QConsole::setArg(const std::string &arg) {
     console->moveCursor(QTextCursor::End);
 }
 
+QString QConsole::getAddress() {
+    char loc[48];
+    FILE *file;
+    file = popen("pwd", "r");
+    std::string temp = std::string(fgets(loc, sizeof(loc), file));
+    pclose(file);
+    temp.erase(remove(temp.begin(), temp.end(), '\n'), temp.end());
+    std::strcpy(loc,user.c_str());
+    std::strcat(loc,":");
+    std::strcat(loc,temp.c_str());
+    std::strcat(loc,"$ ");
+    return loc;
+}
+
 void QConsole::Process(const std::string &cmd) {
     if(cmd.size()) {
         history.push_back(cmd);
         hist_idx = int(history.size());
 
         //Variables
-        std::string* token_arr;
+        std::vector<std::string> token_vec;
         std::string s = cmd;
         std::string delimiter = " ";
         size_t pos = 0;
         std::string token;
         std::string temp;
-        int command;
         int ctr;
         int parse_ctr;
 
-        //Key
-        const char *keyTable[6] = {"ls", "cd", "rm", "mkdir", "quit", "history"};
-
         //Variables that need to be reset at the top of the loop
-        command = -1;
         pos = 0;
         ctr = 1;
         parse_ctr = 0;
@@ -135,71 +165,185 @@ void QConsole::Process(const std::string &cmd) {
             temp.erase(0, pos + delimiter.length());
         }
 
-        //std::cout<<"so"<<std::endl;
-
-        //Declare array with the length
-        token_arr = new std::string [ctr];
         pos = 0;
 
         //Assign each index of the array
         while ((pos = s.find(delimiter)) != std::string::npos) {
             token = s.substr(0, pos);
-            token_arr[parse_ctr] = token;
+            token_vec.push_back(token);
 
             //Increment actual parse counter and erase the indexed part of the input
             parse_ctr++;
             s.erase(0, pos + delimiter.length());
         }
-        token_arr[parse_ctr] = s;
-
-        //Compare the command to the key table
-        for(int i = 0; i < 6; i++) {
-            if((token_arr[0] == keyTable[i])) {
-                //std::cout << keyTable[i] << std::endl;
-                command = i;
-            }
-        }
-
-        delete [] token_arr;
-
-        //Switch case where execution is done for each command
-        //console->append("\n");
-        switch(command) {
-            case 0: 
-                std::cout << "ls" << std::endl;
-                console->append("ls"); 
-            break;
-
-            case 1:
-                std::cout << "cd" << std::endl;
-                console->append("cd");
-            break;
-
-            case 2:
-                std::cout << "rm" << std::endl;
-                console->append("rm");
-            break;
-
-            case 3:
-                std::cout << "mkdir" << std::endl;
-                console->append("mkdir");
-            break;
-
-            case 4:
-                std::cout << "gtfo" << std::endl;
-                console->append("gtfo");
-                exit(1);
-            break;
-
-            case 5:
-            std::cout << std::endl;
-            for (int i = 0; i < int(history.size()); i++) {
-                std::cout << history[i] << std::endl;
-            }
-            break;
-            default:
-            console->append("Error, No valid command inputted");
-        }
+        token_vec.push_back(s);
+        
+        execute_command(token_vec);
     }
     return;
+}
+
+void QConsole::launch_built_in(std::vector<std::string> tokens)
+{
+	/*
+	BULIT-IN COMMANDS:
+	
+	"cd",
+	"ls",
+	"rm",
+	"mkdir",
+	"rmdir",
+	"touch",
+	"exit"
+	
+	*/
+	
+	// If command is "cd"
+	if (tokens[0] == "cd")
+	{
+		// Expecting at least 1 argument
+		if (tokens.size() >= 2)
+		{
+			// Attempt to cd into the given directory
+			if (chdir(tokens[1].c_str()) == 0)
+			{
+				std::cout << "Successfully changed directory." << std::endl << std::endl;
+			}
+			else
+			{
+				std::cout << "Failed to change directory." << std::endl << std::endl;
+			}
+		}
+	}
+
+	// Else if command is "ls"
+	else if (tokens[0] == "ls")
+	{
+		// Open directory stream for the current directory
+		DIR* dirp = opendir(".");
+
+		// Output every entry in the current directory
+		dirent* direntp;
+		while ((direntp = readdir(dirp)) != NULL)
+		{
+			// Left justify
+			// std::cout << (std::string(std::left));
+            console->append(QString::fromStdString(std::string( direntp->d_name )));
+			std::cout << std::setw(20) << direntp->d_name << std::setw(5);
+			if (direntp->d_type == DT_REG)
+			{
+				std::cout << "file";
+			}
+			else if (direntp->d_type == DT_DIR)
+			{
+				std::cout << "dir";
+			}
+			else
+			{
+				std::cout << "other";
+			}
+
+			// Revert to right justify
+			std::cout << std::right << std::endl;
+		}
+
+		// Close the directory stream
+		closedir(dirp);	
+	}
+
+	// Else if command is "touch"
+	else if (tokens[0] == "touch")
+	{
+		// Expects exactly 1 argument
+		if (tokens.size() == 2)
+		{
+			// Open new file stream
+			std::ofstream newFile;
+			newFile.open(tokens[1].c_str());
+
+			// Then immediately close it
+			newFile.close();
+		}
+	}
+
+	// Else if command is "exit"
+	else if (tokens[0] == "exit")
+	{
+		// Expects no arguments
+		if (tokens.size() == 1)
+		{
+			// Exit the shell
+			exit(0);
+		}
+	}
+}
+
+
+void QConsole::launch_process(std::vector<std::string> tokens)
+{
+	// Fork and execute the command
+	pid_t pid;
+	int status;
+
+	pid = fork();
+	if (pid == 0)
+	{
+		// Copy the contents of the tokens vector into a null-terminated char* array
+		char* args[tokens.size() + 1];
+		for (int i = 0; i < int(tokens.size()); i++)
+		{
+			strcpy(args[i], tokens[i].c_str());
+		}
+		args[tokens.size()] = NULL;
+
+		// Child process
+		/* int execvp(const char *file, char *const argv[]); */
+		if (execvp(args[0], args) == -1)
+		{
+			perror("Cannot execute child");
+		}				
+		// Failed
+		exit(1);
+	}
+	else if (pid < 0)
+	{
+		// Error forking
+		perror("Cannot fork");
+	}
+	else
+	{
+		// Parent process waits until child has terminated
+		do
+		{
+			waitpid(pid, &status, WUNTRACED);
+		}
+		while (!WIFEXITED(status) && !WIFSIGNALED(status));
+	}	
+}
+
+void QConsole::execute_command(std::vector<std::string> tokens)
+{
+	// An empty command was entered.
+	if (tokens.size() == 0)
+	{
+		std::cout << "Empty command entered." << std::endl; 
+		return;
+	}
+
+	// Check if command is built-in
+	for (int i = 0; i < int(built_ins.size()); i++)
+	{
+		if (strcmp(tokens[0].c_str(), built_ins[i].c_str()) == 0)
+		{
+			// First token matches a built-in function, so launch it
+			launch_built_in(tokens);
+
+			return;
+		}
+	}
+
+	// Else try to launch a process
+	launch_process(tokens);
+
+	return;
 }
