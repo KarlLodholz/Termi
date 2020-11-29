@@ -2,19 +2,31 @@
  
 #include <QApplication>
 #include <QKeyEvent>
-#include <QVBoxLayout>
 #include <bits/stdc++.h> 
-#include<iostream>
+//#include <iostream>
+// #include <unistd.h>
  
 QConsole::QConsole(QWidget *parent) : QWidget(parent)
 {
     resize(650,500);
+
+    //set user info
+    char temp[32];
+    FILE *file;
+    file = popen("whoami", "r");
+    fgets(temp, sizeof(temp), file);
+    pclose(file);
+    std::string name = std::string(temp);
+    name.erase(remove(name.begin(), name.end(), '\n'), name.end());
+    std::strcpy(temp,name.c_str());
+    adrs = std::strcat(temp,":~ $");
+
+    //set console
     console = new QTextEdit();
     console->setCursorWidth(2);
     console->setFontFamily("Courier");
     console->setFontPointSize(13);
     console->setTextColor(QColor(255,255,255));
-    //console->setTextBackgroundColor(QColor(0,0,0));
     console->setText(adrs);
     console->moveCursor(QTextCursor::End);
     lineStart = (console->textCursor()).position();
@@ -26,6 +38,8 @@ QConsole::QConsole(QWidget *parent) : QWidget(parent)
     mainLayout = new QVBoxLayout;
     mainLayout->addWidget(console);
     setLayout(mainLayout);
+
+    
 }
  
 void QConsole::keyPressEvent(QKeyEvent *e)
@@ -55,7 +69,6 @@ void QConsole::keyPressEvent(QKeyEvent *e)
         case Qt::Key_Down: 
             if(hist_idx < int(history.size())) {
                 history[hist_idx++] = getArg();
-                //console->setText( QString::fromStdString((getTxt().substr(0,lineStart-1)).append((hist_idx == history.size() ? temp_hist : history[hist_idx]))));    
                 setArg((hist_idx == int(history.size()) ? temp_hist : history[hist_idx]));
             }
             break;
@@ -89,7 +102,6 @@ void QConsole::setArg(const std::string &arg) {
 
 void QConsole::Process(const std::string &cmd) {
     if(cmd.size()) {
-
         history.push_back(cmd);
         hist_idx = int(history.size());
 

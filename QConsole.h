@@ -12,7 +12,7 @@ class QConsole : public QWidget
     Q_OBJECT
 public:
     QConsole(QWidget *parent = 0);
-    QString adrs = "user@user:address$ ";
+    QString adrs;// = "user:address$ ";
     std::string getArg();
     std::string getTxt();
     void setArg(const std::string &arg);
