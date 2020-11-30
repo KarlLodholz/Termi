@@ -6,21 +6,26 @@
 //#include <iostream>
 // #include <unistd.h>
 
+#include <iomanip>  // setw()
+#include <fstream>  // file I/O
+#include <vector>
+#include <sstream>
+#include <iterator>
+#include <cstring>
+#include <cstdio>
 
-// Linux file system headers
 #include <unistd.h>
-#include <dirent.h>	// linux directory structures
+#include <dirent.h> // linux directory structures
 
-// Async headers
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 
 const std::vector<std::string> built_ins = {
 	"ls",
 	"cd",
 	"rm",
 	"mkdir",
-	"rmdir",
 	"touch",
 	"exit"
 };
@@ -72,6 +77,11 @@ void QConsole::keyPressEvent(QKeyEvent *e)
         case Qt::Key_Control:
         case Qt::Key_Alt:
         case Qt::Key_Meta: //windows key
+		case Qt::Key_CapsLock:
+		case Qt::Key_NumLock:
+		case Qt::Key_ScrollLock:
+		case Qt::Key_PageUp:
+		case Qt::Key_PageDown:
             break;// do nothing because if sent to console it seg_faults
         case Qt::Key_Enter:
         case Qt::Key_Return:
@@ -185,97 +195,174 @@ void QConsole::Process(const std::string &cmd) {
 
 void QConsole::launch_built_in(std::vector<std::string> tokens)
 {
-	/*
-	BULIT-IN COMMANDS:
-	
-	"cd",
-	"ls",
-	"rm",
-	"mkdir",
-	"rmdir",
-	"touch",
-	"exit"
-	
-	*/
-	
-	// If command is "cd"
-	if (tokens[0] == "cd")
-	{
-		// Expecting at least 1 argument
-		if (tokens.size() >= 2)
-		{
-			// Attempt to cd into the given directory
-			if (chdir(tokens[1].c_str()) == 0)
-			{
-				std::cout << "Successfully changed directory." << std::endl << std::endl;
-			}
-			else
-			{
-				std::cout << "Failed to change directory." << std::endl << std::endl;
-			}
-		}
-	}
+    /*
+    BUILT-IN COMMANDS:
+    
+    "cd",
+    "ls",
+    "rm",
+    "mkdir",
+    "touch",
+    "quit"
+    */
+    
+    // If command is "cd"
+    if (tokens[0] == "cd")
+    {
+        // Expecting exactly 1 argument
+        if (tokens.size() == 2)
+        {
+            // Attempt to cd into the given directory
+            if (chdir(tokens[1].c_str()) == 0)
+            {
+                std::cout << "Successfully changed directory." << std::endl << std::endl;
+            }
+            else
+            {
+                std::cout << "Failed to change directory." << std::endl << std::endl;
+            }
+        }
+        else
+        {
+            // Too many or too few args
+            std::cout << "Incorrect number of arguments (expects 1)" << std::endl;
+        }
+    }
 
-	// Else if command is "ls"
-	else if (tokens[0] == "ls")
-	{
-		// Open directory stream for the current directory
-		DIR* dirp = opendir(".");
+    // Else if command is "ls"
+    else if (tokens[0] == "ls")
+    {
+        // Open directory stream for the current directory
+        DIR* dirp = opendir(".");
 
-		// Output every entry in the current directory
-		dirent* direntp;
-		while ((direntp = readdir(dirp)) != NULL)
-		{
-			// Left justify
-			// std::cout << (std::string(std::left));
-            console->append(QString::fromStdString(std::string( direntp->d_name )));
-			std::cout << std::setw(20) << direntp->d_name << std::setw(5);
-			if (direntp->d_type == DT_REG)
-			{
-				std::cout << "file";
-			}
-			else if (direntp->d_type == DT_DIR)
-			{
-				std::cout << "dir";
-			}
-			else
-			{
-				std::cout << "other";
-			}
+        // Left justify the output
+        std::cout << std::left;
 
-			// Revert to right justify
-			std::cout << std::right << std::endl;
-		}
+        // Output . and .. first
+        std::cout << std::setw(20) << "." << std::setw(5) << "Dir" << std::endl;
+        std::cout << std::setw(20) << ".." << std::setw(5) << "Dir" << std::endl;
+		console->append(QString::fromStdString("Dir  \t."));
+		console->append(QString::fromStdString("Dir  \t.."));
 
-		// Close the directory stream
-		closedir(dirp);	
-	}
 
-	// Else if command is "touch"
-	else if (tokens[0] == "touch")
-	{
-		// Expects exactly 1 argument
-		if (tokens.size() == 2)
-		{
-			// Open new file stream
-			std::ofstream newFile;
-			newFile.open(tokens[1].c_str());
+        // Output every entry in the current directory
+        dirent* direntp;
+        while ((direntp = readdir(dirp)) != NULL)
+        {
+            // Don't re-print . and ..
+            if ((strcmp(direntp->d_name, ".") != 0) && (strcmp(direntp->d_name, "..") != 0))
+            {
+                // Left justify the output
+                std::cout << std::left;
+                // Print entry name and type
+                std::cout << std::setw(20) << direntp->d_name << std::setw(5);
 
-			// Then immediately close it
-			newFile.close();
-		}
-	}
+                if (direntp->d_type == DT_REG)
+                {
+                    std::cout << "File";
+					console->append(QString::fromStdString("File \t"+std::string(direntp->d_name)));
+                }
+                else if (direntp->d_type == DT_DIR)
+                {
+                    std::cout << "Dir";
+					console->append(QString::fromStdString("Dir  \t"+std::string(direntp->d_name)));
+                }
+                else
+                {
+                    std::cout << "Other";
+					console->append(QString::fromStdString("Other\t"+std::string(direntp->d_name)));
+                }
+                // Revert to right justify
+                std::cout << std::right << std::endl;
+            }
+        }
 
-	// Else if command is "exit"
-	else if (tokens[0] == "exit")
-	{
-		// Expects no arguments
-		if (tokens.size() == 1)
-		{
-			// Exit the shell
-			exit(0);
-		}
-	}
+        // Close the directory stream
+        closedir(dirp); 
+    }
+
+    // Else if command is "rm"
+    else if (tokens[0] == "rm")
+    {
+        // Expects at least 1 argument
+        if (tokens.size() >= 2)
+        {
+            // For each token after the command
+            for (int i = 1; i < tokens.size(); i++)
+            {
+                // Remove the entry with that name if it exists
+                if (remove(tokens[i].c_str()) != 0)
+                {
+                    std::string errMsg = "Error deleting entry \"" + tokens[i] + "\"";
+                    perror(errMsg.c_str());
+					console->append(QString::fromStdString(errMsg));
+				}
+                else
+                {
+                    std::cout << "Entry successfully deleted" << std::endl;
+					console->append(QString::fromStdString("Entry successfully deleted"));
+                }
+            }
+        }
+    }
+
+    // Else if command is "mkdir"
+    else if (tokens[0] == "mkdir")
+    {
+        // Expects at least 1 argument
+        if (tokens.size() >= 2)
+        {
+            // For each token after the command
+            for (int i = 1; i < tokens.size(); i++)
+            {
+                // Temp storage for path
+                char buf[4096];
+                getcwd(buf, sizeof buf);
+                std::string path = buf;
+                path += "/" + tokens[i];
+
+                // Make a new directory with the given name
+                if (mkdir(path.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) != 0)
+                {
+                    std::cout << "Error making directory \"" << tokens[i] << "\"" << std::endl;
+					console->append(QString::fromStdString("Error making directory \""+tokens[i]+"\""));
+                }
+                else
+                {
+                    std::cout << "Directory successfully created" << std::endl;
+					console->append(QString::fromStdString("Directory successfully created"));
+                }
+            }
+        }
+    }
+
+    // Else if command is "touch"
+    else if (tokens[0] == "touch")
+    {
+        // Expects at least 1 argument
+        if (tokens.size() >= 2)
+        {
+            // Create a new file for each arguement given
+            for (int i = 1; i < tokens.size(); i++)
+            {
+                // Open new file stream
+                std::ofstream newFile;
+                newFile.open(tokens[i].c_str());
+
+                // Then immediately close it
+                newFile.close();
+				console->append(QString::fromStdString("File Successfully created"));
+
+            }
+        }
+    }
+
+    // Else if command is "quit"
+    else if (tokens[0] == "quit")
+    {
+        // Exit the shell
+        exit(0);
+    }
 }
 
 
