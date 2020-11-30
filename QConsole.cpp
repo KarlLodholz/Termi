@@ -3,9 +3,41 @@
 #include <QApplication>
 #include <QKeyEvent>
 #include <bits/stdc++.h> 
-//#include <iostream>
-// #include <unistd.h>
- 
+
+#include <iostream>
+#include <iomanip>  // setw()
+#include <fstream>  // file I/O
+#include <vector>
+#include <sstream>
+#include <iterator>
+#include <cstring>
+#include <cstdio>
+
+#include <unistd.h>
+#include <dirent.h> // linux directory structures
+
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
+
+// Forward declarations for executing commands
+void execute_command(std::vector<std::string> tokens);
+void launch_built_in(std::vector<std::string> tokens);
+void launch_process(std::vector<std::string> tokens);
+
+const std::vector<std::string> built_ins =
+{
+    "cd",
+    "ls",
+    "rm",
+    "mkdir",
+    "touch",
+    "history",
+    "quit"
+};
+
+std::vector<std::string> history;
+
 QConsole::QConsole(QWidget *parent) : QWidget(parent)
 {
     resize(650,500);
@@ -26,7 +58,7 @@ QConsole::QConsole(QWidget *parent) : QWidget(parent)
     console->setCursorWidth(2);
     console->setFontFamily("Courier");
     console->setFontPointSize(13);
-    console->setTextColor(QColor(255,255,255));
+    // console->setTextColor(QColor(255,255,255));
     console->setText(adrs);
     console->moveCursor(QTextCursor::End);
     lineStart = (console->textCursor()).position();
@@ -105,101 +137,298 @@ void QConsole::Process(const std::string &cmd) {
         history.push_back(cmd);
         hist_idx = int(history.size());
 
-        //Variables
-        std::string* token_arr;
-        std::string s = cmd;
-        std::string delimiter = " ";
-        size_t pos = 0;
-        std::string token;
-        std::string temp;
-        int command;
-        int ctr;
-        int parse_ctr;
-
-        //Key
-        const char *keyTable[6] = {"ls", "cd", "rm", "mkdir", "quit", "history"};
-
-        //Variables that need to be reset at the top of the loop
-        command = -1;
-        pos = 0;
-        ctr = 1;
-        parse_ctr = 0;
-
-        temp = s;
-
-        //Loop to find needed length of array 
-        while ((pos = temp.find(delimiter)) != std::string::npos) {
-            //std::cout<<"seggi"<<std::endl;
-            token = temp.substr(0, pos);
-            ctr++;
-            temp.erase(0, pos + delimiter.length());
-        }
-
-        //std::cout<<"so"<<std::endl;
-
-        //Declare array with the length
-        token_arr = new std::string [ctr];
-        pos = 0;
-
-        //Assign each index of the array
-        while ((pos = s.find(delimiter)) != std::string::npos) {
-            token = s.substr(0, pos);
-            token_arr[parse_ctr] = token;
-
-            //Increment actual parse counter and erase the indexed part of the input
-            parse_ctr++;
-            s.erase(0, pos + delimiter.length());
-        }
-        token_arr[parse_ctr] = s;
-
-        //Compare the command to the key table
-        for(int i = 0; i < 6; i++) {
-            if((token_arr[0] == keyTable[i])) {
-                //std::cout << keyTable[i] << std::endl;
-                command = i;
+        std::vector<std::string> token_vect;
+        std::string curr_token = "";
+        // Iterate over every character in cmd
+        for (int i = 0; i < cmd.length(); i++)
+        {
+            // If the character is '\'
+            if (cmd[i] == '\\')
+            {
+                // If there is another character and it is a space
+                if ((i < cmd.length() - 1) && (cmd[i + 1] == ' '))
+                {
+                    // Add a space to the token
+                    curr_token += " ";
+                    // Skip to the next character
+                    i++;
+                }
+            }
+            // Else if the character is a space
+            else if (cmd[i] == ' ')
+            {
+                // This is the end of the token
+                token_vect.push_back(curr_token);
+                curr_token = "";
+            }
+            // Else if this is the last character of the string
+            else if (i == cmd.length() - 1)
+            {
+                curr_token += cmd[i];
+                token_vect.push_back(curr_token);
+                curr_token = "";
+            }
+            // Else add the character to the current token
+            else
+            {
+                curr_token += cmd[i];
             }
         }
 
-        delete [] token_arr;
+        // Print tokens
+        // for (int i = 0; i < token_vect.size(); i++)
+        // {
+        //     std::cout << token_vect[i] << std::endl;
+        // }
 
-        //Switch case where execution is done for each command
-        //console->append("\n");
-        switch(command) {
-            case 0: 
-                std::cout << "ls" << std::endl;
-                console->append("ls"); 
-            break;
+        // Process and execute the given command
+        execute_command(token_vect);
+    }
 
-            case 1:
-                std::cout << "cd" << std::endl;
-                console->append("cd");
-            break;
+    return;
+}
 
-            case 2:
-                std::cout << "rm" << std::endl;
-                console->append("rm");
-            break;
 
-            case 3:
-                std::cout << "mkdir" << std::endl;
-                console->append("mkdir");
-            break;
 
-            case 4:
-                std::cout << "gtfo" << std::endl;
-                console->append("gtfo");
-                exit(1);
-            break;
+void execute_command(std::vector<std::string> tokens)
+{
+    // An empty command was entered.
+    if (tokens.size() == 0)
+    {
+        std::cout << "Empty command entered." << std::endl; 
+        return;
+    }
 
-            case 5:
-            std::cout << std::endl;
-            for (int i = 0; i < int(history.size()); i++) {
-                std::cout << history[i] << std::endl;
-            }
-            break;
-            default:
-            console->append("Error, No valid command inputted");
+    // Check if command is built-in
+    for (int i = 0; i < built_ins.size(); i++)
+    {
+        if (strcmp(tokens[0].c_str(), built_ins[i].c_str()) == 0)
+        {
+            // First token matches a built-in function, so launch it
+            launch_built_in(tokens);
+
+            return;
         }
     }
+
+    std::cout << "starting new process" << std::endl;
+
+    // Else try to launch a process
+    launch_process(tokens);
+
     return;
+}
+
+void launch_built_in(std::vector<std::string> tokens)
+{
+    /*
+    BUILT-IN COMMANDS:
+    
+    "cd",
+    "ls",
+    "rm",
+    "mkdir",
+    "touch",
+    "history",
+    "quit"
+    */
+    
+    // If command is "cd"
+    if (tokens[0] == "cd")
+    {
+        // Expecting exactly 1 argument
+        if (tokens.size() == 2)
+        {
+            // Attempt to cd into the given directory
+            if (chdir(tokens[1].c_str()) == 0)
+            {
+                std::cout << "Successfully changed directory." << std::endl << std::endl;
+            }
+            else
+            {
+                std::cout << "Failed to change directory." << std::endl << std::endl;
+            }
+        }
+        else
+        {
+            // Too many or too few args
+            std::cout << "Incorrect number of arguments (expects 1)" << std::endl;
+        }
+    }
+
+    // Else if command is "ls"
+    else if (tokens[0] == "ls")
+    {
+        // Open directory stream for the current directory
+        DIR* dirp = opendir(".");
+
+        // Left justify the output
+        std::cout << std::left;
+
+        // Output . and .. first
+        std::cout << std::setw(20) << "." << std::setw(5) << "Dir" << std::endl;
+        std::cout << std::setw(20) << ".." << std::setw(5) << "Dir" << std::endl;
+
+        // Output every entry in the current directory
+        dirent* direntp;
+        while ((direntp = readdir(dirp)) != NULL)
+        {
+            // Don't re-print . and ..
+            if ((strcmp(direntp->d_name, ".") != 0) && (strcmp(direntp->d_name, "..") != 0))
+            {
+                // Left justify the output
+                std::cout << std::left;
+                // Print entry name and type
+                std::cout << std::setw(20) << direntp->d_name << std::setw(5);
+
+                if (direntp->d_type == DT_REG)
+                {
+                    std::cout << "File";
+                }
+                else if (direntp->d_type == DT_DIR)
+                {
+                    std::cout << "Dir";
+                }
+                else
+                {
+                    std::cout << "Other";
+                }
+
+                // Revert to right justify
+                std::cout << std::right << std::endl;
+            }
+        }
+
+        // Close the directory stream
+        closedir(dirp); 
+    }
+
+    // Else if command is "rm"
+    else if (tokens[0] == "rm")
+    {
+        // Expects at least 1 argument
+        if (tokens.size() >= 2)
+        {
+            // For each token after the command
+            for (int i = 1; i < tokens.size(); i++)
+            {
+                // Remove the entry with that name if it exists
+                if (remove(tokens[i].c_str()) != 0)
+                {
+                    std::string errMsg = "Error deleting entry \"" + tokens[i] + "\"";
+                    perror(errMsg.c_str());
+                }
+                else
+                {
+                    std::cout << "Entry successfully deleted" << std::endl;
+                }
+            }
+        }
+    }
+
+    // Else if command is "mkdir"
+    else if (tokens[0] == "mkdir")
+    {
+        // Expects at least 1 argument
+        if (tokens.size() >= 2)
+        {
+            // For each token after the command
+            for (int i = 1; i < tokens.size(); i++)
+            {
+                // Temp storage for path
+                char buf[4096];
+                getcwd(buf, sizeof buf);
+                std::string path = buf;
+                path += "/" + tokens[i];
+
+                // Make a new directory with the given name
+                if (mkdir(path.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) != 0)
+                {
+                    std::cout << "Error making directory \"" << tokens[i] << "\"" << std::endl;
+                }
+                else
+                {
+                    std::cout << "Directory successfully created" << std::endl;
+                }
+            }
+        }
+    }
+
+    // Else if command is "touch"
+    else if (tokens[0] == "touch")
+    {
+        // Expects at least 1 argument
+        if (tokens.size() >= 2)
+        {
+            // Create a new file for each arguement given
+            for (int i = 1; i < tokens.size(); i++)
+            {
+                // Open new file stream
+                std::ofstream newFile;
+                newFile.open(tokens[i].c_str());
+
+                // Then immediately close it
+                newFile.close();
+            }
+        }
+    }
+
+    // Else if command is "history"
+    else if (tokens[0] == "history")
+    {
+        std::cout << std::endl;
+        for (int i = 0; i < int(history.size()); i++) {
+            std::cout << history[i] << std::endl;
+        }
+    }
+
+    // Else if command is "quit"
+    else if (tokens[0] == "quit")
+    {
+        // Exit the shell
+        exit(0);
+    }
+}
+
+void launch_process(std::vector<std::string> tokens)
+{
+    // Fork and execute the command
+    pid_t pid, wpid;
+    int status;
+
+    pid = fork();
+    if (pid == 0)
+    {
+        // Copy the contents of the tokens vector into a null-terminated char* array
+        char* args[tokens.size() + 1];
+        for (int i = 0; i < tokens.size(); i++)
+        {
+            strcpy(args[i], tokens[i].c_str());
+            std::cout << args[i] << std::endl;
+        }
+        args[tokens.size()] = NULL;
+
+        // Child process
+        /* int execvp(const char *file, char *const argv[]); */
+        if (execvp(args[0], args) == -1)
+        {
+            perror("Cannot execute child");
+        }               
+        // Failed
+        exit(1);
+    }
+    else if (pid < 0)
+    {
+        // Error forking
+        perror("Cannot fork");
+    }
+    else
+    {
+        // Parent process waits until child has terminated
+        do
+        {
+            wpid = waitpid(pid, &status, WUNTRACED);
+        }
+        while (!WIFEXITED(status) && !WIFSIGNALED(status));
+    }   
 }
