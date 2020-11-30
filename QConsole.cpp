@@ -46,12 +46,15 @@ QConsole::QConsole(QWidget *parent) : QWidget(parent)
     char temp[32];
     FILE *file;
     file = popen("whoami", "r");
-    fgets(temp, sizeof(temp), file);
+    
+    
+    user = std::string(fgets(temp, sizeof(temp), file));
     pclose(file);
-    std::string name = std::string(temp);
-    name.erase(remove(name.begin(), name.end(), '\n'), name.end());
-    std::strcpy(temp,name.c_str());
-    adrs = std::strcat(temp,":~ $");
+    user.erase(remove(user.begin(), user.end(), '\n'), user.end());
+
+    std::vector<std::string> home{"cd","/home/"+user+"/"};
+
+    launch_built_in(home);
 
     //set console
     console = new QTextEdit();
@@ -70,8 +73,6 @@ QConsole::QConsole(QWidget *parent) : QWidget(parent)
     mainLayout = new QVBoxLayout;
     mainLayout->addWidget(console);
     setLayout(mainLayout);
-
-    
 }
  
 void QConsole::keyPressEvent(QKeyEvent *e)
@@ -87,7 +88,7 @@ void QConsole::keyPressEvent(QKeyEvent *e)
         case Qt::Key_Enter:
         case Qt::Key_Return:
             Process(getArg());
-            console->append("\n"+adrs);
+            console->append("\n"+getAddress());
             console->moveCursor(QTextCursor::End);
             lineStart = (console->textCursor()).position();
             break;
@@ -130,6 +131,20 @@ std::string QConsole::getTxt() {
 void QConsole::setArg(const std::string &arg) {
     console->setText(QString::fromStdString((getTxt().substr(0,lineStart)).append(arg)));
     console->moveCursor(QTextCursor::End);
+}
+
+QString QConsole::getAddress() {
+    char loc[48];
+    FILE *file;
+    file = popen("pwd", "r");
+    std::string temp = std::string(fgets(loc, sizeof(loc), file));
+    pclose(file);
+    temp.erase(remove(temp.begin(), temp.end(), '\n'), temp.end());
+    std::strcpy(loc,user.c_str());
+    std::strcat(loc,":");
+    std::strcat(loc,temp.c_str());
+    std::strcat(loc,"$ ");
+    return loc;
 }
 
 void QConsole::Process(const std::string &cmd) {
